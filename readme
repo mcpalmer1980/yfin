@@ -1,0 +1,104 @@
+YFIN is a command line program that displays stock market data queried from the Yahoo Finance web page. Code is borrowed from the the yahoo_fin python module by Andrew Treadway at http://theautomatic.net/yahoo_fin-documentation.
+
+Installation:
+1: Download and extract or clone this repository
+2: Navigate to the installation directory from the command line
+3: Enter the following command: pip3 install .
+
+The yfin program includes many sub commands with various options. Help is available for all commands.
+
+To list all available commands with summaries
+yfin --help
+
+To list options for a specific commands
+yfin COMMAND --help
+
+Available Commands:
+
+ACTIVE	Print the day's most active stocks
+ yfin active
+	-f, --from INTEGER  first entry to show
+	-t, --to INTEGER    last entry to show
+	-p, --pager         display all entries in scrolling pager
+	--help              show this message and exit.
+
+CASH	Print cash flow for a specific stock ticker
+ yfin cash TICKER
+	TICKER              specify a stock ticker
+
+DATA	Print historical price data
+ yfin data TICKER OPTIONS
+	TICKER              specify a stock ticker
+	-l, --last INTEGER  print previous X days
+	-f, --from TEXT     first date to show
+	-t, --to TEXT       last date to show
+	-p, --pager         display output in scrolling pager
+
+HOLDERS	Print major stock holders by ticker
+ yfin holders TICKER
+	TICKER              specify a stock ticker
+
+INFO	Print analyst info by stock ticker
+ yfin info TICKER
+	TICKER              specify a stock ticker
+
+LIST	List stock tickers from given exchange
+	Select from dow, nasdaq, sp500, for other
+ yfin list OPTIONS
+	-F, --filter TEXT   filter results (start. .end or all)
+	-f, --from INTEGER  first entry to show
+	-t, --to INTEGER    last entry to show
+	-c, --columns INT   columns to show
+	-p, --pager         display output in scrolling pager
+
+LOSERS	Show day's biggest price losers
+ yfin losers OPTIONS
+	-f, --from INTEGER  first entry to show
+	-t, --to INTEGER    last entry to show
+	-p, --pager         display all entries in scrolling pager
+	--help              show this message and exit.
+
+PRICE	Find the current stock price for one or more stock ticker
+ yfin price TICKER1 TICKER2 ...
+
+QUOTE	print quote data for given stock ticker
+ yfin quote TICKER OPTIONS
+	TICKER              specify a stock ticker
+	-l INTEGER          print the value of a given line number
+	-L INTEGER          print attribute and value of line number
+
+SEARCH	Find tickers for company in nasdaq, amex, or nyse WHERE:
+ yfin search WHERE WHAT OPTIONS
+	WHERE:              exchange to search can be nasdaq, amex, nyse, or all
+	WHAT:               search string can be a regular expression
+                            replace with . to show all
+	-s, --sector TEXT   filter by sector
+	-i, --industry TEXT filter by industry
+	--help              show this message and exit.
+
+STATS	Print stats by stock ticker
+ yfin stats TICKER OPTIONS
+	TICKER              specify a stock ticker
+	-f TEXT             filter results rows by string data
+	-l INTEGER          print the value of a given line number
+	-L INTEGER          print attribute and value of line number
+
+TEST	Test serial vs concurrent stock price query speed
+ yfin test TICKER1 TICKER2 ... OPTIONS
+	TICKER              specify one or more stock tickers
+	-t, --times INT     multiply the query list for longer testing
+	-w, --workers INT   number of worker threads for testing (10 def)
+
+WATCH	Watch multiple tickers updated regularly
+ yfin watch TICKER1 TICKER2 ... OPTIONS
+	TICKER              specify one or mor stock tickers
+	-c, --columns INT   columns to show
+	-d, --delay INT     delay between updates (30s minimum)
+	-t, --times INT     multiply the query list for testing
+
+WINNERS  Show day's biggest price winners
+ yfin winners OPTIONS
+	-f, --from INTEGER  first entry to show
+	-t, --to INTEGER    last entry to show
+	-p, --pager         display all entries in scrolling pager
+
