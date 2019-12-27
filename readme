@@ -90,6 +90,7 @@ TEST	Test serial vs concurrent stock price query speed
 	-w, --workers INT   number of worker threads for testing (10 def)
 
 WATCH	Watch multiple tickers updated regularly
+        A saved ticker list may be used as a single argument
  yfin watch TICKER1 TICKER2 ... OPTIONS
 	TICKER              specify one or mor stock tickers
 	-c, --columns INT   columns to show
