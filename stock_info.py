@@ -84,7 +84,6 @@ def build_url(ticker, start_date = None, end_date = None, interval = "1d"):
     
     params = {"period1": start_seconds, "period2": end_seconds,
               "interval": interval.lower(), "events": "div,splits"}
-    
     return site, params
 
 
@@ -157,11 +156,8 @@ def get_data(ticker, start_date = None, end_date = None, index_as_date = True,
         raise AssertionError("interval must be of of '1d', '1wk', or '1mo'")
     
     # build and connect to URL
-    ti.add('\n' + ticker, True)
     site, params = build_url(ticker, start_date, end_date, interval)
-    ti.add('url built')
     resp = requests.get(site, params = params)
-    ti.add('request response')
     
     if not resp.ok:
         raise AssertionError(resp.json())
@@ -183,7 +179,6 @@ def get_data(ticker, start_date = None, end_date = None, index_as_date = True,
     if not index_as_date:  
         frame = frame.reset_index()
         frame.rename(columns = {"index": "date"}, inplace = True)
-    ti.add('processed')
     return frame
 
 

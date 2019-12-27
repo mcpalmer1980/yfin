@@ -10,18 +10,12 @@ term = Terminal()
 print = click.echo
 describe = click.echo
 
-def time_it(desc, ti=None):
-    if ti:
-        ti, desc = ti
-        ti.append(time.time() - ti[0])
-        desc.append(desc)
-        return ti, desc
-    else:
-        return time.time(), desc
-
 def print_wide_list(l, columns=3, pager=False):
     height = len(l) // columns
-    width = term.width // columns
+    try:
+        width = term.width // columns
+    except:
+        width = 80 // columns
     if len(l) > height * columns:
         height += 1
         l += [''] * (height * columns - len(l))
@@ -69,14 +63,34 @@ def price(query,):
 
 @main.command()
 @click.argument('query', nargs=-1)
-@click.option('--columns', '-c', default=1, help='columns to show')
+@click.option('--columns', '-c', default=None, help='columns to show')
 @click.option('--delay', '-d', default = 30, help='delay between updates (30s minimum)')
 @click.option('--times', '-t', default=1, help='multiply the query list for testing')
 def watch(query, columns, delay, times):
-    'Watch multiple tickers updated regularly'
+    """
+    Watch multiple tickers updated regularly\n
+    A saved ticker list may be used as a single argument
+    """
     import time
+
+    # load tickers from tickers.dat if applicable
+    if len(query) == 1:
+        from classes import TickerData
+        ticker_data = TickerData(silent=True)
+        tickers = ticker_data[query[0]]
+        if tickers:
+            query = tickers
     query = query * times
-    #delay = max(delay, 30) if delay else 30
+    print('retrieving {} prices from yahoo finance'.format(len(query)))
+
+    # set ideal columns if not specified
+    if not columns:
+        max_columns = term.width // 30
+        max_rows = term.height - 5
+        max_items = max_columns * max_rows
+        wanted_rows = int(term.height * .66)
+        columns = min(max_columns, len(tickers) // wanted_rows + 1) 
+
     with term.fullscreen():
         while True:
             start_time = time.time()
@@ -346,6 +360,16 @@ def quote(ticker, line, LINE):
     else:
         print(results)
 
+@main.command()
+@click.argument('query')
+def fetch(query):
+    'get tickers from list'
+    from classes import TickerData
+    ticker_data = TickerData(silent=True)
+    tickers = ticker_data[query]
+    if tickers:
+        results = ' '.join(tickers)
+        print(results)
 
 
 if __name__ == '__main__':
