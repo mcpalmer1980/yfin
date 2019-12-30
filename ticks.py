@@ -39,19 +39,24 @@ def SelectAction(actions):
     answer = prompt(act_prompt)
     return actions[answer['action']]()
 
-def SearchTickers(addresses, exchanges, company, sector=None, industry=None):
+def SearchTickers(exchanges, company, sector=None, industry=None):
     """
     Find tickers for company in nasdaq, amex, or nyse\n
     """
-    print('searching for tickers in {}'.format(exchanges))
-    #dat = pd.concat(map(pd.read_csv, addresses))
-    #dat = dat.filter(items=['Symbol', 'Name', 'Sector', 'industry'])
+    #print('searching for tickers in {}'.format(exchanges))
     dat = company_data.GetData(exchanges)
 
     if sector:
-        dat = dat[dat['Sector'].str.contains(sector, na=False, case=False) ]
-    if industry:
-        dat = dat[dat['industry'].str.contains(industry, na=False, case=False) ]
+        if type(sector) == str:
+            dat = dat[dat['Sector'].str.contains(sector, na=False, case=False) ]
+        else:
+            dat = dat[dat['Sector'].isin(sector) ]
+
+    if industry: # filter by string or list
+        if type(industry) == str:
+            dat = dat[dat['industry'].str.contains(industry, na=False, case=False) ]
+        else:
+            dat = dat[dat['industry'].isin(industry) ]
 
     dat = dat[dat['Name'].str.contains(company, na=False, case=False) ]
     if len(dat) < 1:
@@ -77,7 +82,7 @@ def SearchTickers(addresses, exchanges, company, sector=None, industry=None):
     results = prompt(prompt_dict)['tickers']
     tickers = [ r.split()[0].strip() for r in results ]
     inverse = prompt( {
-        'type': 'rawlist',
+        'type': 'list',
         'name': 'inverse',
         'message': 'Add Items',
         'choices': [
@@ -89,7 +94,6 @@ def SearchTickers(addresses, exchanges, company, sector=None, industry=None):
         tickers = [ t for t in ticker_list if t not in tickers]
     elif 'None' in inverse:
         tickers = []
-    print(tickers)
     return tickers
 
 def AddTickers():
@@ -105,9 +109,7 @@ def AddTickers():
             'qmark': '>',
             'message': 'Exchanges to search',
             'name': 'exchanges',
-            'choices': exchange_list,
-            'validate': lambda answer: 'Must select at least one exchange.' \
-                if len(answer) == 0 else True },
+            'choices': exchange_list, },
         {
             'type': 'input',
             'name': 'company',
@@ -125,9 +127,8 @@ def AddTickers():
     if len(results['exchanges']) < 1:
         results['exchanges'] = exchanges # select all if none
 
-    addresses = [ exchanges[select] for select in results['exchanges'] ]
     tickers = SearchTickers(
-        addresses, results['exchanges'], results['company'],
+        results['exchanges'], FilterToRegex(results['company']),
         results['sector'], results['industry'])
 
     ticker_data.Add(tickers)
@@ -160,9 +161,7 @@ def RemoveTickers():
         'message': 'Select Tickers',
         'name': 'tickers',
         'choices': ticker_lines }
-    ti.Add('about to prompt')
     results = prompt(prompt_dict)['tickers']
-    ti.Add('user replied')
     tickers = [r.split()[0] for r in results]
 
     inverse = prompt( {
@@ -179,8 +178,6 @@ def RemoveTickers():
     elif 'None' in inverse:
         tickers = []
     ticker_data.Filter(choice, tickers)
-    print(ti)
-
     return True
 
 def RemoveList():
@@ -236,6 +233,100 @@ def WatchTickers(tickers = None, columns=None, delay=60, times=None):
                     return True
     return True
 
+def BrowseIndustry():
+    exchanges = exchange_source_dict 
+    exchange_list = []
+    for item in exchanges.keys():
+        exchange_list.append({'name': item})
+
+    question = [
+        {
+            'type': 'input',
+            'name': 'industry',
+            'message': 'Industry search string'} ]
+
+    results = prompt(question)
+    filt = FilterToRegex(results['industry'])
+
+    df = company_data()
+    df = df[df.industry.str.contains(filt, na=False, case=False) ]
+    industries = sorted(df.industry.dropna().unique())
+
+    industry_list = []
+    for item in industries:
+        industry_list.append({'name': item})
+
+    question = [
+        {
+            'type': 'checkbox',
+            'qmark': '>',
+            'message': 'Industries to search',
+            'name': 'industry',
+            'choices': industry_list },
+        {
+            'type': 'checkbox',
+            'qmark': '>',
+            'message': 'Exchanges to search',
+            'name': 'exchange',
+            'choices': exchange_list },
+        {
+            'type': 'input',
+            'name': 'company',
+            'message': 'Company search string'} ]
+
+    results = prompt(question)
+    exchanges = results['exchange'] or exchanges.keys()
+    companies = FilterToRegex(results['company'])
+    industries = results['industry']
+    tickers = SearchTickers(exchanges, companies, '', industries )
+    return True
+
+def BrowseSector():
+    exchanges = exchange_source_dict 
+    exchange_list = []
+    for item in exchanges.keys():
+        exchange_list.append({'name': item})
+
+    df = company_data()
+    sectors = sorted(df.Sector.dropna().unique())
+
+    sector_list = []
+    for item in sectors:
+        sector_list.append({'name': item})
+
+    question = [
+        {
+            'type': 'checkbox',
+            'qmark': '>',
+            'message': 'Sectors to search',
+            'name': 'sectors',
+            'choices': sector_list },
+        {
+            'type': 'checkbox',
+            'qmark': '>',
+            'message': 'Exchanges to search',
+            'name': 'exchange',
+            'choices': exchange_list },
+        {
+            'type': 'input',
+            'name': 'company',
+            'message': 'Company search string'} ]
+
+    results = prompt(question)
+    exchanges = results['exchange'] or exchanges.keys()
+    companies = FilterToRegex(results['company'])
+    sectors = results['sectors']
+    tickers = SearchTickers(exchanges, companies, sectors, '' )
+    return True
+
+def FilterToRegex(filt):
+    if filt:
+        if filt.endswith('.'):
+            filt = '^' + filt[:-1]
+        elif filt.startswith('.'):
+            filt = filt[1:] + '$'
+    return filt
+
 def print_wide_list(l, columns=3, pager=False):
     
     height = len(l) // columns
@@ -271,9 +362,11 @@ def exit():
 
 actions = {
     'Add Tickers': AddTickers,
+    'Browse Industry': BrowseIndustry,
+    'Browse Sector': BrowseSector,
+    'Remove List': RemoveList,
     'Remove Tickers': RemoveTickers,
     'Watch Tickers': WatchTickers,
-    'Remove List': RemoveList,
     'Exit': exit }
 
 if __name__ == '__main__':
