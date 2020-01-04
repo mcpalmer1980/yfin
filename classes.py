@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 from PyInquirer import style_from_dict, Token, prompt, Separator
 from PyInquirer import Validator, ValidationError
@@ -59,6 +60,8 @@ class TickerData():
         Initialize ticker lists
         try to load from filename (def = tickers.dat)
         """
+        filename = os.path.join(os.path.expanduser('~'), filename)
+        self.changed = False
         self.ticker_lists = {}
         try:
             with open(filename, 'r') as f:
@@ -86,6 +89,7 @@ class TickerData():
         Add tickers to the selected list
         """
         if tickers:
+            self.changed = True
             name = self.get_name()
             if name in self.ticker_lists:
                 self.ticker_lists[name] += [
@@ -97,6 +101,7 @@ class TickerData():
         """
         Remove items from named ticker_list
         """
+        self.changed = True
         if name in self.ticker_lists:
             self.ticker_lists[name] = [
                 t for t in self.ticker_lists[name] if t not in items]
@@ -105,6 +110,10 @@ class TickerData():
         """
         Save the ticker lists to filename (def = tickers.dat)
         """
+        if not self.changed:
+            print('no changes to save')
+            return
+        filename = os.path.join(os.path.expanduser('~'), filename)
         print('saving {} stock lists to {}'.format(len(self.ticker_lists), filename))
         try:
             with open(filename, 'w') as f:
@@ -158,6 +167,11 @@ class CompanyData():
         df.set_index('Symbol', inplace=True)
         self.company_names = df
         self.loaded = True
+    
+    def __call__(self):
+        if not self.loaded:
+            self.retrieve_data()
+        return self.company_data
 
     def GetNames(self, tickers):
         if not self.loaded:
@@ -166,10 +180,73 @@ class CompanyData():
         df = self.company_names.loc[tickers]
         return df
 
-    def GetData(self, exchanges):
+    def GetData(self, exchanges=None):
         if not self.loaded:
             self.retrieve_data()
-        cd = self.company_data
-        df = cd[cd.Exchange.isin(exchanges)]
+        df = self.company_data
+        if exchanges:
+            df = df[df.Exchange.isin(exchanges)]
         return df.filter(items=['Symbol', 'Name', 'Sector', 'industry'])
 
+class IBTrader():
+    def __init__(self, port=7496, clientId=100):
+        from ib.opt import Connection, message
+        from ib.ext.Contract import Contract
+        from ib.ext.Order import Order
+        self.message = message
+        self.Contract = Contract
+        self.order = Order
+
+        self.connection = Connection.create(port, clientId)
+        self.connection.connect()
+        self.connection.register(self.error_handler, 'Error')
+        self.connection.registerAll(self.reply_handler)
+        self.order_id = 1
+    
+    def __del__(self):
+        self.connection.disconnect()
+
+    def error_handler(msg):
+        """Handles the capturing of error messages"""
+        print "Server Error: %s" % msg
+
+    def reply_handler(msg):
+        """Handles of server replies"""
+        print "Server Response: %s, %s" % (msg.typeName, msg)
+
+    def create_contract(symbol, sec_type, exch, prim_exch, curr):
+        """Create a Contract object defining what will
+        be purchased, at which exchange and in which currency.
+
+        symbol - The ticker symbol for the contract
+        sec_type - The security type for the contract ('STK' is 'stock')
+        exch - The exchange to carry out the contract on
+        prim_exch - The primary exchange to carry out the contract on
+        curr - The currency in which to purchase the contract"""
+        contract = self.Contract()
+        contract.m_symbol = symbol
+        contract.m_secType = sec_type
+        contract.m_exchange = exch
+        contract.m_primaryExch = prim_exch
+        contract.m_currency = curr
+        return contract
+
+    def create_order(order_type, quantity, action):
+        """Create an Order object (Market/Limit) to go long/short.
+
+        order_type - 'MKT', 'LMT' for Market or Limit orders
+        quantity - Integral number of assets to order
+        action - 'BUY' or 'SELL'"""
+        order = self.Order()
+        order.m_orderType = order_type
+        order.m_totalQuantity = quantity
+        order.m_action = action
+        return order
+    
+    def Purchase(self, ticker, quantity, type='STK', market='MKT', exchange='SMART', primary='SMART', currency='USD'):
+        contract = self.create_contract(ticker, type, exchange, primary, currency)
+        order = self.create_order(market, quantity, 'BUY')
+
+        # Use the connection to the send the order to IB
+        tws_conn.placeOrder(self.order_id, contract, order)
+        self.order_id += 1

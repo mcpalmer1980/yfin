@@ -111,10 +111,12 @@ def get_price(params):
            data = response.json()
            ticker = data['chart']['result'][0]['meta']['symbol']
            price = data["chart"]["result"][0]["indicators"]["quote"][0]['close'][-1]
+           volume = data["chart"]["result"][0]["indicators"]["quote"][0]['volume'][-1]
         except:
             ticker = url.rpartition('/')[2].upper()
             price = 'Not found'
-        return ticker, price
+            volume = 0
+        return ticker, price, volume
 
 
 def get_all_prices(tickers, workers = 10):

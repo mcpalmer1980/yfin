@@ -5,8 +5,9 @@
 """
 from __future__ import print_function, unicode_literals
 
+#long to wide using pivot
+
 import regex
-from pprint import pprint
 import pandas as pd
 from PyInquirer import style_from_dict, Token, prompt, Separator
 from PyInquirer import Validator, ValidationError
@@ -39,26 +40,29 @@ def SelectAction(actions):
     answer = prompt(act_prompt)
     return actions[answer['action']]()
 
-def SearchTickers(exchanges, company, sector=None, industry=None):
+def SearchTickers(exchanges, company, sector=None, industry=None, tickers=None):
     """
     Find tickers for company in nasdaq, amex, or nyse\n
     """
     #print('searching for tickers in {}'.format(exchanges))
     dat = company_data.GetData(exchanges)
 
+    if tickers:
+        dat = dat[dat.Symbol.isin(tickers)]
+
     if sector:
         if type(sector) == str:
-            dat = dat[dat['Sector'].str.contains(sector, na=False, case=False) ]
+            dat = dat[dat['Sector'].str.contains(FilterToRegex(sector), na=False, case=False) ]
         else:
             dat = dat[dat['Sector'].isin(sector) ]
 
     if industry: # filter by string or list
         if type(industry) == str:
-            dat = dat[dat['industry'].str.contains(industry, na=False, case=False) ]
+            dat = dat[dat['industry'].str.contains(FilterToRegex(industry), na=False, case=False) ]
         else:
             dat = dat[dat['industry'].isin(industry) ]
 
-    dat = dat[dat['Name'].str.contains(company, na=False, case=False) ]
+    dat = dat[dat['Name'].str.contains(FilterToRegex(company), na=False, case=False) ]
     if len(dat) < 1:
         print('No results for {} found'.format(company))
         return
@@ -128,7 +132,7 @@ def AddTickers():
         results['exchanges'] = exchanges # select all if none
 
     tickers = SearchTickers(
-        results['exchanges'], FilterToRegex(results['company']),
+        results['exchanges'], results['company'],
         results['sector'], results['industry'])
 
     ticker_data.Add(tickers)
@@ -191,11 +195,7 @@ def RemoveList():
         del ticker_data.ticker_lists[choice]
     return True
 
-def WatchTickers(tickers = None, columns=None, delay=60, times=None):
-    'Watch multiple tickers updated regularly'
-    import stock_info as yfs
-    import time
-
+def PickTickers(columns=None, times=None):
     max_columns = term.width // 30
     max_rows = term.height - 5
     max_items = max_columns * max_rows
@@ -207,7 +207,14 @@ def WatchTickers(tickers = None, columns=None, delay=60, times=None):
     
     if not columns:
         tickers = tickers[:max_items]
-        columns = min(max_columns, len(tickers) // wanted_rows + 1) 
+        columns = min(max_columns, len(tickers) // wanted_rows + 1)
+    return tickers, columns
+
+def WatchTickers(tickers = None, columns=None, delay=60, times=None):
+    'Watch multiple tickers updated regularly'
+    import stock_info as yfs
+    import time
+    tickers, columns = PickTickers(columns, times)
 
     with term.fullscreen():
         while True:
@@ -215,7 +222,7 @@ def WatchTickers(tickers = None, columns=None, delay=60, times=None):
             start_time = time.time()
             results = yfs.get_all_prices(tickers)
             outp = []
-            for ticker, price in results:
+            for ticker, price, volume in results:
                 outp.append('{:6s}: {}'.format(ticker, price))
             ti = time.strftime("%H:%M:%S", time.gmtime())
             print(term.clear() + 'YFIN watching {} tickers: {}'.format(len(tickers), ti))
@@ -230,7 +237,7 @@ def WatchTickers(tickers = None, columns=None, delay=60, times=None):
                 try:
                     time.sleep(pause)
                 except KeyboardInterrupt:
-                    return True
+                    break
     return True
 
 def BrowseIndustry():
@@ -276,10 +283,121 @@ def BrowseIndustry():
 
     results = prompt(question)
     exchanges = results['exchange'] or exchanges.keys()
-    companies = FilterToRegex(results['company'])
+    companies = results['company']
     industries = results['industry']
     tickers = SearchTickers(exchanges, companies, '', industries )
     return True
+
+def ProcessTickers(tickers = None, delay=10):
+    'Watch multiple tickers updated regularly'
+    import stock_info as yfs
+    import time
+    tickers, columns = PickTickers()
+    pdf = pd.DataFrame(columns=tickers)
+    vdf = pd.DataFrame(columns=tickers)
+    first_time = None
+
+    with term.fullscreen():
+        while True:
+            print('updating')
+            start_time = time.time()
+            if not first_time:
+                first_time = start_time
+            results = yfs.get_all_prices(tickers)
+
+            ostr = []
+            pdict = {}
+            vdict = {}
+            for ticker, price, volume in results:
+                ostr.append('{:6s}: {}'.format(ticker, price))
+                pdict[ticker] = price
+                vdict[ticker] = volume
+            pdf.loc[start_time - first_time] = pdict
+            vdf.loc[start_time - first_time] = vdict
+            end_time = time.time()
+            tstr = time.strftime("%H:%M:%S", time.gmtime(end_time))
+            print(term.clear() + 'YFIN watching {} tickers: {}'.format(len(tickers), tstr))
+            print('Press CTRL-C to exit\n')
+            print_wide_list(ostr, columns)
+            pause = delay - int(end_time - start_time)
+            print('polled in {:.3f}: sleeping {}'.format(
+                (end_time - start_time) * 1000, pause) )
+            if pause > 0:
+                try:
+                    time.sleep(pause)
+                except KeyboardInterrupt:
+                    break
+    print(pdf)
+    print(vdf)
+    return True
+
+def ProcessTickers(tickers = None, delay=10):
+    'Watch multiple tickers updated regularly'
+    import stock_info as yfs
+    import time
+    tickers, columns = PickTickers()
+    df = pd.DataFrame(columns=[
+            'timepoint',
+            'ticker',
+            'metric',
+            'value' ] )
+    first_time = None
+
+    with term.fullscreen():
+        while True:
+            print('updating')
+            start_time = time.time()
+            if not first_time:
+                first_time = start_time
+            results = yfs.get_all_prices(tickers)
+            timepoint = int(start_time - first_time)
+
+            ostr = []
+            additions = []
+            for ticker, price, volume in results:
+                additions.append({
+                    'timepoint': timepoint,
+                    'ticker': ticker,
+                    'metric': 'price',
+                    'value': price})
+                additions.append({
+                    'timepoint': timepoint,
+                    'ticker': ticker,
+                    'metric': 'volume',
+                    'value': volume})
+                ostr.append('{:6s}: {}'.format(ticker, price))
+
+            df = df.append(additions)
+            end_time = time.time()
+            tstr = time.strftime("%H:%M:%S", time.gmtime(end_time))
+            print(term.clear() + 'YFIN processing {} tickers: {}'.format(len(tickers), tstr))
+            print('Press CTRL-C to exit\n')
+            print_wide_list(ostr, columns)
+            pause = delay - int(end_time - start_time)
+            print('polled in {:.3f}: sleeping {}'.format(
+                (end_time - start_time) * 1000, pause) )
+            if pause > 0:
+                try:
+                    time.sleep(pause)
+                except KeyboardInterrupt:
+                    break
+
+    prices = df[df.metric == 'price'].pivot(
+        index = 'timepoint',
+        columns = 'ticker',
+        values = 'value')
+    volume = df[df.metric == 'volume'].pivot(
+        index = 'timepoint',
+        columns = 'ticker',
+        values = 'value')
+    print('\nLONG')
+    print(df)
+    print('\nPRICES from LONG')
+    print(prices)
+    print('\nVOLUME fron LONG')
+    print(volume)
+    return True
+
 
 def BrowseSector():
     exchanges = exchange_source_dict 
@@ -314,10 +432,50 @@ def BrowseSector():
 
     results = prompt(question)
     exchanges = results['exchange'] or exchanges.keys()
-    companies = FilterToRegex(results['company'])
+    companies = results['company']
     sectors = results['sectors']
     tickers = SearchTickers(exchanges, companies, sectors, '' )
     return True
+
+def BrowseIndex():
+    import stock_info as yfs
+    index = {
+            'dow': yfs.tickers_dow,
+            'nasdaq': yfs.tickers_nasdaq,
+            'sp500': yfs.tickers_sp500 }
+
+    question = [
+        {
+            'type': 'list',
+            'qmark': '>',
+            'message': 'Index to Search',
+            'name': 'index',
+            'choices': index.keys() },
+        {
+            'type': 'input',
+            'name': 'company',
+            'message': 'Company search string'},
+        {
+            'type': 'input',
+            'name': 'sector',
+            'message': 'Sector search string'},
+        {
+            'type': 'input',
+            'name': 'industry',
+            'message': 'Industry search string'} ]
+
+    results = prompt(question)
+    tickers = index[results['index']]()
+
+    tickers = SearchTickers(
+            None,
+            results['company'],
+            results['sector'],
+            results['industry'],
+            tickers)
+    ticker_data.Add(tickers)
+    return True
+
 
 def FilterToRegex(filt):
     if filt:
@@ -362,13 +520,19 @@ def exit():
 
 actions = {
     'Add Tickers': AddTickers,
+    'Browse Index': BrowseIndex,
     'Browse Industry': BrowseIndustry,
     'Browse Sector': BrowseSector,
+    'Process Tickers': ProcessTickers,
     'Remove List': RemoveList,
     'Remove Tickers': RemoveTickers,
     'Watch Tickers': WatchTickers,
     'Exit': exit }
 
-if __name__ == '__main__':
+def main():
     while SelectAction(actions):
         pass
+
+if __name__ == '__main__':
+    main()
+

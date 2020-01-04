@@ -89,14 +89,14 @@ def watch(query, columns, delay, times):
         max_rows = term.height - 5
         max_items = max_columns * max_rows
         wanted_rows = int(term.height * .66)
-        columns = min(max_columns, len(tickers) // wanted_rows + 1) 
+        columns = min(max_columns, len(query) // wanted_rows + 1) 
 
     with term.fullscreen():
         while True:
             start_time = time.time()
             results = yfs.get_all_prices(query)
             outp = []
-            for ticker, price in results:
+            for ticker, price, volume in results:
                 outp.append('{:6s}: {}'.format(ticker, price))
             ti = time.strftime("%H:%M:%S", time.gmtime())
             print(term.clear() + 'YFIN watching {} tickers: {}'.format(len(query), ti))
@@ -311,6 +311,8 @@ def stats(ticker, filter, line, LINE):
     elif filter:
         results = results[results['Attribute'].str.contains(filter, na=False, case=False) ]
         print(results)
+    else:
+        print(results)
 
 @main.command()
 @click.argument('ticker')
@@ -370,6 +372,33 @@ def fetch(query):
     if tickers:
         results = ' '.join(tickers)
         print(results)
+
+@main.command()
+def sectors():
+    'Print stock market sectors'
+    from classes import CompanyData
+    company_data = CompanyData()
+    df = company_data()
+    sectors = df.Sector.dropna().unique()
+    print_wide_list(sorted(sectors), 1)
+
+@main.command()
+@click.option('--filter', '-f', 'filter_', help='filter output')
+@click.option('--pager', '-p', is_flag=True, help='show results in scrolling pager')
+def industry(filter_, pager):
+    'Print stock market industries'
+    from classes import CompanyData
+    company_data = CompanyData()
+    df = company_data()
+    if filter_:
+        print('filtering results by ' + filter_)
+        if filter_.endswith('.'):
+            filter_ = '^' + filter_[:-1]
+        elif filter_.startswith('.'):
+            filter_ = filter_[1:] + '$'
+        df = df[df.industry.str.contains(filter_, na=False, case=False) ]
+    industries = df.industry.dropna().unique()
+    print_wide_list(sorted(industries), 2, pager=pager)
 
 
 if __name__ == '__main__':
