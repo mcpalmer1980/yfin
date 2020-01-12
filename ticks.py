@@ -201,7 +201,7 @@ def PickTickers(columns=None, times=None):
     max_items = max_columns * max_rows
     wanted_rows = int(term.height * .66)
 
-    tickers = ticker_data[ticker_data.get_name()]
+    tickers = ticker_data[ticker_data.get_name(False)]
     if times:
         tickers = tickers * times
     
@@ -293,54 +293,11 @@ def ProcessTickers(tickers = None, delay=10):
     import stock_info as yfs
     import time
     tickers, columns = PickTickers()
-    pdf = pd.DataFrame(columns=tickers)
-    vdf = pd.DataFrame(columns=tickers)
-    first_time = None
-
-    with term.fullscreen():
-        while True:
-            print('updating')
-            start_time = time.time()
-            if not first_time:
-                first_time = start_time
-            results = yfs.get_all_prices(tickers)
-
-            ostr = []
-            pdict = {}
-            vdict = {}
-            for ticker, price, volume in results:
-                ostr.append('{:6s}: {}'.format(ticker, price))
-                pdict[ticker] = price
-                vdict[ticker] = volume
-            pdf.loc[start_time - first_time] = pdict
-            vdf.loc[start_time - first_time] = vdict
-            end_time = time.time()
-            tstr = time.strftime("%H:%M:%S", time.gmtime(end_time))
-            print(term.clear() + 'YFIN watching {} tickers: {}'.format(len(tickers), tstr))
-            print('Press CTRL-C to exit\n')
-            print_wide_list(ostr, columns)
-            pause = delay - int(end_time - start_time)
-            print('polled in {:.3f}: sleeping {}'.format(
-                (end_time - start_time) * 1000, pause) )
-            if pause > 0:
-                try:
-                    time.sleep(pause)
-                except KeyboardInterrupt:
-                    break
-    print(pdf)
-    print(vdf)
-    return True
-
-def ProcessTickers(tickers = None, delay=10):
-    'Watch multiple tickers updated regularly'
-    import stock_info as yfs
-    import time
-    tickers, columns = PickTickers()
     df = pd.DataFrame(columns=[
             'timepoint',
             'ticker',
-            'metric',
-            'value' ] )
+            'price',
+            'volume' ] )
     first_time = None
 
     with term.fullscreen():
@@ -358,13 +315,8 @@ def ProcessTickers(tickers = None, delay=10):
                 additions.append({
                     'timepoint': timepoint,
                     'ticker': ticker,
-                    'metric': 'price',
-                    'value': price})
-                additions.append({
-                    'timepoint': timepoint,
-                    'ticker': ticker,
-                    'metric': 'volume',
-                    'value': volume})
+                    'price': volume,
+                    'volume': price})
                 ostr.append('{:6s}: {}'.format(ticker, price))
 
             df = df.append(additions)
@@ -382,19 +334,19 @@ def ProcessTickers(tickers = None, delay=10):
                 except KeyboardInterrupt:
                     break
 
-    prices = df[df.metric == 'price'].pivot(
+    prices = df.pivot(
         index = 'timepoint',
         columns = 'ticker',
-        values = 'value')
-    volume = df[df.metric == 'volume'].pivot(
+        values = 'price')
+    volume = df.pivot(
         index = 'timepoint',
         columns = 'ticker',
-        values = 'value')
+        values = 'volume')
     print('\nLONG')
     print(df)
     print('\nPRICES from LONG')
     print(prices)
-    print('\nVOLUME fron LONG')
+    print('\nVOLUME from LONG')
     print(volume)
     return True
 
