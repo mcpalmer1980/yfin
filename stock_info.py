@@ -7,6 +7,8 @@ import io
 import re
 import time
 
+not_found = 0
+
 class time_it():
     def __init__(self, desc=False):
         self.last_time = time.time()
@@ -114,7 +116,7 @@ def get_price(params):
            volume = data["chart"]["result"][0]["indicators"]["quote"][0]['volume'][-1]
         except:
             ticker = url.rpartition('/')[2].upper()
-            price = 'Not found'
+            price = not_found
             volume = 0
         return ticker, price, volume
 

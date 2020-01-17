@@ -14,10 +14,12 @@ from PyInquirer import Validator, ValidationError
 from blessings import Terminal
 term = Terminal()
 from classes import *
+from scipy import stats
 
-ticker_data = TickerData()
-company_data = CompanyData()
-ti = time_it()
+index_tickers = {
+    'sp500ticker': '^GSPC',
+    'dow': '^DJI',
+    'nasdaq': '^IXIC' }
 
 exchange_source_dict = {
     'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
@@ -26,7 +28,7 @@ exchange_source_dict = {
 
 
 #from examples import custom_style_3
-print('Stock Search and Query by Christopher M Palmieri')
+
 
 def SelectAction(actions):
     act_list = actions.keys()
@@ -195,7 +197,7 @@ def RemoveList():
         del ticker_data.ticker_lists[choice]
     return True
 
-def PickTickers(columns=None, times=None):
+def PickTickers(columns=None, times=None, limit=True):
     max_columns = term.width // 30
     max_rows = term.height - 5
     max_items = max_columns * max_rows
@@ -206,15 +208,16 @@ def PickTickers(columns=None, times=None):
         tickers = tickers * times
     
     if not columns:
-        tickers = tickers[:max_items]
+        if limit:
+            tickers = tickers[:max_items]
         columns = min(max_columns, len(tickers) // wanted_rows + 1)
-    return tickers, columns
+    return tickers, columns, max_items
 
 def WatchTickers(tickers = None, columns=None, delay=60, times=None):
     'Watch multiple tickers updated regularly'
     import stock_info as yfs
     import time
-    tickers, columns = PickTickers(columns, times)
+    tickers, columns, max_fit = PickTickers(columns, times, limit=True)
 
     with term.fullscreen():
         while True:
@@ -288,11 +291,11 @@ def BrowseIndustry():
     tickers = SearchTickers(exchanges, companies, '', industries )
     return True
 
-def ProcessTickers(tickers = None, delay=10):
+def ProcessTickers(tickers = None, delay=60):
     'Watch multiple tickers updated regularly'
     import stock_info as yfs
     import time
-    tickers, columns = PickTickers()
+    tickers, columns, max_fit = PickTickers(limit=False)
     df = pd.DataFrame(columns=[
             'timepoint',
             'ticker',
@@ -300,6 +303,7 @@ def ProcessTickers(tickers = None, delay=10):
             'volume' ] )
     first_time = None
 
+    # display price data until user cancels
     with term.fullscreen():
         while True:
             print('updating')
@@ -315,8 +319,8 @@ def ProcessTickers(tickers = None, delay=10):
                 additions.append({
                     'timepoint': timepoint,
                     'ticker': ticker,
-                    'price': volume,
-                    'volume': price})
+                    'price': price,
+                    'volume': volume})
                 ostr.append('{:6s}: {}'.format(ticker, price))
 
             df = df.append(additions)
@@ -324,7 +328,7 @@ def ProcessTickers(tickers = None, delay=10):
             tstr = time.strftime("%H:%M:%S", time.gmtime(end_time))
             print(term.clear() + 'YFIN processing {} tickers: {}'.format(len(tickers), tstr))
             print('Press CTRL-C to exit\n')
-            print_wide_list(ostr, columns)
+            print_wide_list(ostr[:max_fit], columns)
             pause = delay - int(end_time - start_time)
             print('polled in {:.3f}: sleeping {}'.format(
                 (end_time - start_time) * 1000, pause) )
@@ -333,23 +337,60 @@ def ProcessTickers(tickers = None, delay=10):
                     time.sleep(pause)
                 except KeyboardInterrupt:
                     break
-
-    prices = df.pivot(
-        index = 'timepoint',
-        columns = 'ticker',
-        values = 'price')
-    volume = df.pivot(
-        index = 'timepoint',
-        columns = 'ticker',
-        values = 'volume')
-    print('\nLONG')
-    print(df)
-    print('\nPRICES from LONG')
-    print(prices)
-    print('\nVOLUME from LONG')
-    print(volume)
+    df.to_pickle('dataframe')
+    ProcessTickerData(df)
     return True
+        
+def ProcessTickerData(df):
+    prices = Regress(df, 'price')
+    volume = Regress(df, 'volume')
 
+    # display summary
+    print('\nPRICES')
+    print(prices)
+    print(f'Stat Average for {prices.shape[1]} tickers')
+    averages = prices.iloc[-4:].mean(axis=1)
+    print(averages.to_string(header=False))
+
+    print()
+    print('\nVOLUME')
+    print(volume)
+    print(f'Stat Average for {prices.shape[1]} tickers')
+    averages = volume.iloc[-4:].mean(axis=1)
+    print(averages.to_string(header=False))
+
+    return prices, volume
+
+def Regress(dataframe, pivotpoint):
+    from numpy import float32
+    df = dataframe.pivot(
+        index = 'timepoint',
+        columns = 'ticker',
+        values = pivotpoint)
+
+    timepoints = df.index.values
+    changes = {}
+    slopes = {}
+    rvalues = {}
+    pvalues = {}
+    stderrs = {}
+
+    for p in df:
+        results = stats.linregress(timepoints, df[p].astype(float32))
+        start = df.at[timepoints[0], p]
+        end = df.at[timepoints[-1], p]
+
+        changes[p] = end - start   
+        slopes[p] = results.slope
+        rvalues[p] = results.rvalue
+        pvalues[p] = results.pvalue
+        stderrs[p] = results.stderr
+    df.loc['change'] = changes
+    df.loc['slope'] = slopes
+    df.loc['rval'] = rvalues
+    df.loc['pval'] = pvalues
+    df.loc['sterr'] = stderrs
+    return df
 
 def BrowseSector():
     exchanges = exchange_source_dict 
@@ -486,5 +527,9 @@ def main():
         pass
 
 if __name__ == '__main__':
+    print('Stock Search and Query by Christopher M Palmieri')
+    ticker_data = TickerData()
+    company_data = CompanyData()
+    ti = time_it()
     main()
 

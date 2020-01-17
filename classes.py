@@ -160,7 +160,7 @@ class CompanyData():
         self.loaded = False
 
     def retrieve_data(self):
-        print('downloading company data')
+        print('Downloading Company Data')
         exchanges = exchange_source_dict
         #self.company_data = pd.concat(map(pd.read_csv, exchanges.values()))
 

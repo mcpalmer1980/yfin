@@ -216,6 +216,18 @@ def stocks():
     '''List all stocks owned'''
     print(ib.GetStocksFrame())
 
+@main.command()
+def start():
+    print(get_info('aapl', 'previous'))
+
+
+
+def get_info(ticker, item):
+    'Get info from stock ticker'
+    results = yfs.get_stats(ticker)
+    return results[results['Attribute'].str.contains(filter, na=False, case=False) ]
+
+
 
 if __name__ == '__main__':
     main()
