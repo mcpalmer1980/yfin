@@ -121,6 +121,7 @@ def get_price(params):
         return ticker, price, volume
 
 
+
 def get_all_prices(tickers, workers = 10):
     end_date = pd.Timestamp.today() + pd.DateOffset(10)
 
@@ -131,6 +132,8 @@ def get_all_prices(tickers, workers = 10):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         return executor.map(get_price, urls)
+
+
 
 def get_all_prices_slow(tickers):
     end_date = pd.Timestamp.today() + pd.DateOffset(10)

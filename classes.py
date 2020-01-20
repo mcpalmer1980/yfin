@@ -4,11 +4,38 @@ from PyInquirer import style_from_dict, Token, prompt, Separator
 from PyInquirer import Validator, ValidationError
 import stock_info as yfs
 import time
+from collections import OrderedDict as oDict
 
 exchange_source_dict = {
     'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
     'amex': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=amex&render=download',    
     'nyse': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nyse&render=download'} 
+
+def print_wide_list(l, columns=3, pager=False):
+    height = len(l) // columns
+    try:
+        width = term.width // columns
+    except:
+        width = 80 // columns
+    if len(l) > height * columns:
+        height += 1
+        l += [''] * (height * columns - len(l))
+
+    if pager:
+        lines = ''
+        for row in range(height):
+            for col in range(columns):
+                item = l[int(row + col * (height))]
+                lines += item + ' ' * (width - len(item))
+            lines += '\n'
+        click.echo_via_pager(lines)
+    else:
+        for row in range(height):
+            line = ''
+            for col in range(columns):
+                item = l[int(row + col * (height))]
+                line += item + ' ' * (width - len(item))
+            print(line)
 
 class time_it():
     def __init__(self, desc=False):
@@ -67,6 +94,7 @@ class TickerData():
         """
         filename = os.path.join(os.path.expanduser('~'), filename)
         self.changed = False
+        self.silent = silent
         self.ticker_lists = {}
         try:
             with open(filename, 'r') as f:
@@ -79,17 +107,20 @@ class TickerData():
             if line.strip():
                 items = line.strip().split('\t')
                 if items[0].lower() not in self.indexes:
-                    self.ticker_lists[items[0]] = items[1:]
+                    self.ticker_lists[items[0].lower()] = items[1:]
         else:
             if not silent:
                 print('loaded {} stock lists from {}'.format(len(self.ticker_lists), filename))
     def __getitem__(self, index):
+        index = index.lower()
         if index in self.indexes:
             return self.indexes[index]()
         elif index in self.ticker_lists:
             return self.ticker_lists[index]
         else:
             return []
+    def __exit__(self):
+        self.Save()
 
     def Add(self, tickers):
         """
@@ -98,10 +129,14 @@ class TickerData():
         """
         if tickers:
             self.changed = True
-            name = self.get_name()
+            name = self.get_name().lower()
             if name in self.ticker_lists:
+                self.ticker_lists[name] += tickers
+                '''
+                # now removing dups in the Save method
                 self.ticker_lists[name] += [
                     t for t in tickers if t not in self.ticker_lists[name] ]
+                '''
             else:
                 self.ticker_lists[name] = tickers
 
@@ -119,16 +154,19 @@ class TickerData():
         Save the ticker lists to filename (def = tickers.dat)
         """
         if not self.changed:
-            print('no changes to save')
+            if not self.silent:
+                print('no changes to save')
             return
         filename = os.path.join(os.path.expanduser('~'), filename)
-        print('saving {} stock lists to {}'.format(len(self.ticker_lists), filename))
+        if not self.silent:
+            print('saving {} stock lists to {}'.format(len(self.ticker_lists), filename))
         try:
             with open(filename, 'w') as f:
-                for item in self.ticker_lists:
-                    line = '\t'.join(self.ticker_lists[item])
-                    if line and item:
-                        print(item + '\t' + line, file=f)
+                for tick_list in self.ticker_lists:
+                    items = list(oDict.fromkeys(self.ticker_lists[tick_list])) # remove dups
+                    line = '\t'.join(items)
+                    if line and tick_list:
+                        print(tick_list + '\t' + line, file=f)
         except IOError as err:
             print('failed to save list data')
             
@@ -175,7 +213,26 @@ class CompanyData():
         df.set_index('Symbol', inplace=True)
         self.company_names = df
         self.loaded = True
-    
+
+    def retrieve_data_a(self):
+        print('Downloading Company Data')
+        exchanges = exchange_source_dict
+        #self.company_data = pd.concat(map(pd.read_csv, exchanges.values()))
+
+        dfs = []
+        for exchange in exchanges:
+            df = pd.read_csv(exchanges[exchange])
+            df['Exchange'] = exchange
+            dfs.append(df)
+        self.company_data = pd.concat(dfs)
+
+        df = self.company_data.filter(items=['Symbol', 'Name', 'Exchange'])
+        df.set_index('Symbol', inplace=True)
+        self.company_names = df
+        self.loaded = True
+
+
+
     def __call__(self):
         if not self.loaded:
             self.retrieve_data()

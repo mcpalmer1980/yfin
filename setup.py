@@ -6,7 +6,7 @@ setup(
     author='Chris Palmieri',
     description='Scrape yahoo financial data using yahoo-fin from the command line',
     version='0.1',
-    py_modules=['yfin', 'ticks', 'stock_info', 'classes','ibx', 'status'],
+    py_modules=['yfin', 'ticks', 'stock_info', 'classes','ibx', 'market'],
     install_requires=[
         'Click', 'pandas', 'requests_html', 'Blessings', 'PyInquirer', 'scipy',
     ],
@@ -15,6 +15,6 @@ setup(
         yfin=yfin:main
         ticks=ticks:main
         ibx=ibx:main
-        status=status:main
+        market=market:main
     ''',
 )
