@@ -8,27 +8,8 @@ from __future__ import print_function, unicode_literals
 #long to wide using pivot
 
 import regex
-import pandas as pd
-from PyInquirer import style_from_dict, Token, prompt, Separator
-from PyInquirer import Validator, ValidationError
-from blessings import Terminal
-term = Terminal()
-from classes import *
-from scipy import stats
-
-index_tickers = {
-    'sp500ticker': '^GSPC',
-    'dow': '^DJI',
-    'nasdaq': '^IXIC' }
-
-exchange_source_dict = {
-    'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
-    'amex': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=amex&render=download',    
-    'nyse': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nyse&render=download'} 
-
-
-#from examples import custom_style_3
-
+import common
+from common import *
 
 def SelectAction(actions):
     act_list = actions.keys()
@@ -47,7 +28,7 @@ def SearchTickers(exchanges, company, sector=None, industry=None, tickers=None):
     Find tickers for company in nasdaq, amex, or nyse\n
     """
     #print('searching for tickers in {}'.format(exchanges))
-    dat = company_data.GetData(exchanges)
+    dat = common.company_data.GetData(exchanges)
 
     if tickers:
         dat = dat[dat.Symbol.isin(tickers)]

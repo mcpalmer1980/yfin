@@ -1,42 +1,20 @@
-
-import sys
-import time
-import datetime
-import asyncio
-import pandas as pd
-import click
-import stock_info as yfs
-import aiohttp
+#! /usr/bin/env python3
+from common import *
 import ticks
-import numpy
+import handlers
+import ibx
 
-from scipy import stats
-from classes import TickerData, CompanyData, print_wide_list
-from blessings import Terminal
-from aiohttp import ClientSession
-
-term = Terminal()
-
-not_found = 0
-base_url = "https://query1.finance.yahoo.com/v8/finance/chart/"
-index_tickers = {
-    'sp500': '^GSPC',
-    'dow': '^DJI',
-    'nasdaq': '^IXIC' }
+running = True
+marketState = None
 
 
-async def get_exchange_csv():
-    exchange_source_dict = {
-        'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
-        'amex': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=amex&render=download',    
-        'nyse': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nyse&render=download'} 
-    csv = {}
 
-    async with ClientSession() as session:
-        for exchange in exchange_source_dict:
-            resp = await session.get(exchange_source_dict[exchange])
-            csv[exchange] = await resp.text()
-    #print(csv)
+def get_stock_buy_list():
+    if os.getenv('stock_buy'):
+        return os.getenv('stock_buy')
+    else:
+        return ticker_data.get_name(create=True)
+        
 
 async def get_price(ticker, session):
     'Get price, volume, and previous close for ticker'
@@ -45,13 +23,15 @@ async def get_price(ticker, session):
     data =  await response.json()
 
     try:
-        price = data["chart"]["result"][0]["indicators"]["quote"][0]['close'][-1]
-        volume = data["chart"]["result"][0]["indicators"]["quote"][0]['volume'][-1]
+        price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
         pclose = data["chart"]["result"][0]["meta"]["previousClose"]
+        volumes = data["chart"]["result"][0]["indicators"]["quote"][0]['volume']
+        volume = volumes[-1] or volumes[-2] or volumes[-3] or volumes[-4] # the last items are often empty?
     except:
         price = not_found
         volume = 0
         pclose = 0
+
     return ticker, price, volume, pclose
 
 async def get_all_prices(tickers):
@@ -79,10 +59,13 @@ def get_market_status():
         print('{}:\t{:+6.2f} / {:.3f}%'.format(index, change, percent))
 
 
-def get_index_status(tickers, timepoints = 5, delay = 60, save=False):
+def scan_index(tickers, timepoints = 5, delay = 60, save=False):
     'get data for tickers list and run time series analysis for x timepoints'
 
-    print(f"\nScanning {len(tickers)} items over {timepoints} timepoints at {delay} second intervals\n")
+    global running
+    space = ' ' * 20
+    print(f"\nScanning {len(tickers)} items over {timepoints} timepoints at {delay} second intervals\n\n")
+    outstr = 'Awaiting first timepoint results'
     df = pd.DataFrame(columns=[
             'timepoint',
             'ticker',
@@ -91,9 +74,11 @@ def get_index_status(tickers, timepoints = 5, delay = 60, save=False):
     start_time = time.time()
     first_time = start_time
     for tp in range(timepoints):
+        print(term.move_up*2 + outstr + space)
+        print('Collecting data... Please wait' + space)
         results = asyncio.run(get_all_prices(tickers))
+            
         timepoint = int(start_time - first_time)
-
         ostr = []
         additions = []
         for ticker, price, volume, closed in results:
@@ -108,26 +93,32 @@ def get_index_status(tickers, timepoints = 5, delay = 60, save=False):
         end_time = time.time()
         pause = delay - (end_time - start_time)
 
-        print(term.move_up + 'Data for timepoint {} polled in {:,.0f}ms: sleeping {:.1f}s{}'.format(
-            tp+1, (end_time - start_time) * 1000, pause, ' '*10) )
+        outstr = 'Data for timepoint {} polled in {:,.0f}ms: sleeping {:.1f}s{}'.format(
+            tp+1, (end_time - start_time) * 1000, pause, ' '*10)
+        print(term.move_up*2 + outstr + space)
+        print('Waiting: press CTRL-C to cancel' + space)
 
         if pause > 0:
             try:
                 time.sleep(pause)
             except KeyboardInterrupt:
+                print('canceled while waiting')
+                running = False
                 break
+
         start_time = time.time()
 
     if save:
-        df.to_pickle('dataframe')
-    return ProcessTickerData(df)
+        print('data saved to dataframe.sav')
+        df.to_pickle('dataframe.sav')
+    return df
 
 def get_sector_average_change(prices):
     'Unused function that determined average price change for each sector'
 
-    cd = CompanyData().GetData().set_index('Symbol')
     print('\nAverage change by sector')
     sectors = {}
+    cd = company_data.GetData().set_index('Symbol')
     for symbol in prices.columns:
         sector = cd.at[symbol, 'Sector']
         if type(sector) == numpy.ndarray: # some tickers return duplicate sectors
@@ -141,13 +132,13 @@ def get_sector_average_change(prices):
 def get_sector_slopes(prices):
     'Print positive and negative slope data for given prices list'
 
-    cd = CompanyData().GetData().set_index('Symbol')
     print('\nCalculating Sector Details')
     tSectors = {}
     pSectors = {}
     pSectorAvg = {}
     nSectors = {}
     nSectorAvg = {}
+    cd = company_data.GetData().set_index('Symbol')
 
     # sort slope data by sector
     for symbol in prices.columns:
@@ -174,7 +165,7 @@ def get_sector_slopes(prices):
         del tSectors[numpy.nan]
 
     # generate dataframe from slope counts and averages
-    df = pd.DataFrame(columns = ('Positive Slope', '+Average', 'Negative Slope', '-Average', 'Total') )    
+    df = pd.DataFrame(columns = ('Positive Slope', '+Average', 'Negative Slope', '-Average', 'Total', '% Positive') )    
     for sector in sorted(tSectors.keys()):
         pSlopes = int(pSectors.get(sector, 0))
         if sector in pSectorAvg:
@@ -196,13 +187,38 @@ def get_sector_slopes(prices):
                 '+Average': pSlopeAvg,
                 'Negative Slope': nSlopes,
                 '-Average': nSlopeAvg,
-                'Total': tSectors[sector] }
+                'Total': tSectors[sector],
+                '% Positive': pSlopes/tSectors[sector]*100 }
 
     # display dataframe
     df.loc['Total']= df.sum()
+    total_pos = df.at['Total', 'Positive Slope']
+    total = df.at['Total', 'Total']
+    df.at['Total', '% Positive'] = total_pos / total * 100
     for column in ('Positive Slope', 'Negative Slope', 'Total'):
         df[column] = df[column].astype(int)
     print(df)
+    return df
+
+def detect_state(prices, volumes, sectors):
+    pslope = sectors.at['Total', '% Positive']
+    if pslope < 15:
+        state = 'down'
+    elif pslope < 45:
+        state = 'downtrend'
+    elif pslope < 65:
+        state = 'random'
+    elif pslope < 85:
+        state = 'uptrend'
+    else:
+        state = 'up'
+    return state
+
+def save_xls(prices, volumes, sectors):
+    with pd.ExcelWriter('market.xlsx') as writer:  # doctest: +SKIP
+        prices.to_excel(writer, sheet_name='prices')
+        volumes.to_excel(writer, sheet_name='volumes')
+        sectors.to_excel(writer, sheet_name='sectors')
 
 def Regress(dataframe, pivotpoint):
     'Pivot dataframe and append regression info'
@@ -273,39 +289,42 @@ def GetTime():
 @click.option('--save', '-s', is_flag=True, help='save data to "dataframe"')
 @click.option('--interval', '-I', default=60, help='delay between timepoints')
 @click.option('--timepoints', '-t', default=5, help='timepoints to use for regression')
-@click.option('--index', '-i', default='sp500')
-def main(load, save, interval, timepoints, index):
+@click.option('--index', '-i', default='sp500', help='index or ticker list to scan: def=sp500')
+@click.option('--excel', '-x', is_flag=True, help='save data to dataframe.xls')
+def main(load, save, interval, timepoints, index, excel):
     'Main status command'
 
-    '''
-    start = time.time()
-    asyncio.run(get_exchange_csv())
-    print(time.time() - start)
-    start = time.time()
-    cd = CompanyData().GetData().set_index('Symbol')
-    print(time.time() - start)
-    return
-    '''
-
+    global ib, marketState
+    ib = ibx.ibx(allow_error=True, mess='market.py')
     print('Market Status by Christopher M Palmieri')
-    get_market_status()
+    #stock_buy_list = get_stock_buy_list()
+    #print(stock_buy_list)
 
-    td = TickerData(silent=True)
-    tickers = td[index]
-    assert tickers, f'Index {index} not found: exiting'
+    first_time = True
+    while running or first_time:
+        first_time = False
+        get_market_status()
 
-    if load:
-        print('\nScanning Market Data for 5 minutes...')
-        time.sleep(.75)
-        print('Debug: using saved data instead')
-        time.sleep(.75)
-        df = pd.read_pickle('dataframe')
-        prices, volumes = ProcessTickerData(df)
-    else:
-        prices, volumes = get_index_status(tickers, timepoints, interval, save=save)
+        tickers = ticker_data[index]
+        assert tickers, f'Index {index} not found: exiting'
 
-    #get_sector_average_change(prices)
-    get_sector_slopes(prices)
+        if load:
+            print('Loading saved data from dataframe.sav')
+            df = pd.read_pickle('dataframe.sav')
+            prices, volumes = ProcessTickerData(df)
+        else:
+            df = scan_index(tickers, timepoints, interval, save=save)
+            prices, volumes = ProcessTickerData(df)
+
+        #get_sector_average_change(prices)
+        sectors = get_sector_slopes(prices)
+
+        marketState = detect_state(prices, volumes, sectors)
+        print(f'\nCurrent market state: {marketState}')
+        handlers.launch(marketState, ib)
+
+    if excel: save_xls(prices, volumes, sectors)
+
 
  
 

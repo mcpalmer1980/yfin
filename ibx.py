@@ -1,29 +1,17 @@
 #from ib_insync import *
+from common import *
 import ib_insync as ibi
-import asyncio
-import sys
-import time
 
-import pandas as pd
-import stock_info as yfs
-from classes import TickerData
-
-import click
-from blessings import Terminal
-from PyInquirer import style_from_dict, Token, prompt, Separator
-from PyInquirer import Validator, ValidationError
 
 '''
 phage7777
 tmux2KUP
 '''
 
-term = Terminal()
-print = click.echo
-describe = click.echo
 
 class ibx():
     def __init__(self, port=7000, _id=100, allow_error=False, **params):
+        print('ibx loaded from ' + params.get('mess', "nowhere"))
         self.ib = ibi.IB()
         self.connected = False
         try:
@@ -37,8 +25,8 @@ class ibx():
                     'Failed connecting to Interactive Brokers',
                     'Make sure Trader Workstation or the IB Gateway is logged in and running',
                     'Make sure that the API is enabled and set to port {} and id {}'.format(port, _id)))
-            print(message)
             if not allow_error:
+                print(message)
                 import sys
                 sys.exit()
 
@@ -94,6 +82,8 @@ class ibx():
 
     def GetStocksFrame(self):
         stocks = []
+
+
         for position in self.ib.positions():
             ticker = position.contract.symbol
             price = self.GetPrice(ticker)
@@ -103,21 +93,53 @@ class ibx():
                     'cost': position.avgCost,
                     'current': price,
                     'difference': price - position.avgCost,
-                    'value': price * position.position })
+                    'value': price * position.position,
+                    'profit': (position.position * price) - (position.position * position.avgCost) })
         df = pd.DataFrame(columns=[
                 'stock',
                 'shares',
                 'cost',
                 'current',
                 'difference' ,
-                'value' ])
+                'value',
+                'profit' ])
         df = df.append(stocks)
+        totals = df.sum()
+        totals['stock'] = 'total'
+        df = df.append(totals, ignore_index=True)
         return df
 
-    def GetPrices(self):
+    def GetStocksFrame(self):
+        stocks = []
+
+        for position in self.ib.portfolio():
+            ticker = position.contract.symbol
+            stocks.append({
+                    'stock': ticker,
+                    'shares': position.position,
+                    'cost': position.averageCost,
+                    'current': position.marketPrice,
+                    'value': position.marketValue,
+                    'profit': position.unrealizedPNL })
+        df = pd.DataFrame(columns=[
+                'stock',
+                'shares',
+                'cost',
+                'current',
+                'value',
+                'profit' ])
+        df = df.append(stocks)
+        totals = df.sum()
+        totals['stock'] = 'total'
+        df = df.append(totals, ignore_index=True)
+        return df
+
+
+    def GetPrices(self, ticks = None):
         import classes
-        td = TickerData()
-        ticks = td[td.get_name(False)]
+        if not ticks:
+            td = TickerData()
+            ticks = td[td.get_name(False)]
         start_time = time.time()
         contracts = []
         for tick in ticks:
@@ -214,7 +236,11 @@ def stocks():
 @main.command()
 def stocks():
     '''List all stocks owned'''
-    print(ib.GetStocksFrame())
+    df = ib.GetStocksFrame()
+    pnl = df.iat[-1, -1]
+    cost = df.iat[-1, -2]
+    print(df)
+    print(f"profit: {pnl}\ncost: {cost}\n{(pnl/cost)*100:0.1f}%")
 
 @main.command()
 def start():

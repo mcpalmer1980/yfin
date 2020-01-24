@@ -1,10 +1,7 @@
-import os
-import pandas as pd
-from PyInquirer import style_from_dict, Token, prompt, Separator
-from PyInquirer import Validator, ValidationError
-import stock_info as yfs
-import time
+from common import *
 from collections import OrderedDict as oDict
+
+print(time.time())
 
 exchange_source_dict = {
     'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
@@ -83,15 +80,16 @@ class TickerData():
     The list's descriptive title is stored in column 1
     """
 
-    indexes = {
-            'dow': yfs.tickers_dow,
-            'nasdaq': yfs.tickers_nasdaq,
-            'sp500': yfs.tickers_sp500}
     def __init__(self, filename = 'tickers.dat', silent=False):
         """
         Initialize ticker lists
         try to load from filename (def = tickers.dat)
         """
+        self.indexes = {
+            'dow': yfs.tickers_dow,
+            'nasdaq': yfs.tickers_nasdaq,
+            'sp500': yfs.tickers_sp500}
+
         filename = os.path.join(os.path.expanduser('~'), filename)
         self.changed = False
         self.silent = silent
@@ -170,13 +168,18 @@ class TickerData():
         except IOError as err:
             print('failed to save list data')
             
-    def get_name(self, new = True):
+    def get_name(self, new=True, create=False, indexes=True):
         """
         Prompt user to select a list
-        show 'New List' at the top of list unles new=False
+        show 'New List' at the top of list unless new=False
         """
-        choices = sorted(list(self.ticker_lists.keys()) + list(self.indexes.keys()))
-        if new: choices = ['New List'] + choices
+        choices = list(self.ticker_lists.keys())
+        choices = choices + list(self.indexes.keys()) if indexes and not create else choices
+        choices = sorted(choices)
+        if create:
+            choices = ['Select New'] + choices
+        elif new:
+            choices = ['New List'] + choices
 
         question = [{
             'type': 'list',
@@ -184,7 +187,10 @@ class TickerData():
             'message': 'Select list to add tickers',
             'choices': choices }]
         choice = prompt(question)['choice']
-        if choice == 'New List':
+        if choice == 'Select New':
+            self.select_tickers()
+            return self.get_name(create=True, indexes=False)
+        elif choice == 'New List':
             question = [{
                 'type': 'input',
                 'name': 'input',
@@ -192,6 +198,30 @@ class TickerData():
             return prompt(question)['input']    
         else:
             return choice or 'default'
+
+    def select_tickers(self):
+        import ticks
+        questions = [
+            {
+                'type': 'input',
+                'name': 'company',
+                'message': 'Company search string'},
+            {
+                'type': 'input',
+                'name': 'sector',
+                'message': 'Sector search string'},
+            {
+                'type': 'input',
+                'name': 'industry',
+                'message': 'Industry search string'} ]
+        results = prompt(questions)
+
+        tickers = ticks.SearchTickers(
+            exchange_source_dict, results['company'],
+            results['sector'], results['industry'])
+
+        print(tickers)
+        return True
 
 class CompanyData():
     def __init__(self):

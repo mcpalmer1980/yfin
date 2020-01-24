@@ -1,12 +1,6 @@
 #! /usr/bin/env python3
+from common import *
 
-import click
-from blessings import Terminal
-import pandas as pd
-import stock_info as yfs
-
-
-term = Terminal()
 print = click.echo
 describe = click.echo
 
