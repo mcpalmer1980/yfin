@@ -105,7 +105,6 @@ def scan_index(tickers, timepoints = 5, delay = 60, save=False):
                 print('canceled while waiting')
                 running = False
                 break
-
         start_time = time.time()
 
     if save:
@@ -113,92 +112,29 @@ def scan_index(tickers, timepoints = 5, delay = 60, save=False):
         df.to_pickle('dataframe.sav')
     return df
 
-def get_sector_average_change(prices):
-    'Unused function that determined average price change for each sector'
-
-    print('\nAverage change by sector')
-    sectors = {}
-    cd = company_data.GetData().set_index('Symbol')
-    for symbol in prices.columns:
-        sector = cd.at[symbol, 'Sector']
-        if type(sector) == numpy.ndarray: # some tickers return duplicate sectors
-            sector = sector[0] # this prevents an error
-        change = prices.at['change', symbol]
-        sectors[sector] = sectors.get(sector, 0) + change
-    
-    sdf = pd.Series(sectors)
-    print(sdf.to_string())
-
 def get_sector_slopes(prices):
     'Print positive and negative slope data for given prices list'
 
     print('\nCalculating Sector Details')
-    tSectors = {}
-    pSectors = {}
-    pSectorAvg = {}
-    nSectors = {}
-    nSectorAvg = {}
-    cd = company_data.GetData().set_index('Symbol')
+    df = prices
+    sectors = pd.DataFrame(columns = ('pslope', 'pavg', 'nslope', 'navg', 'count', '%pslope'))
+    for sector in sorted(prices['sector'].drop_duplicates().dropna()):
+        count = len(prices.loc[prices['sector'] == sector])
+        pslopes = prices.loc[(prices['sector'] == sector) & (prices['slope'] > 0)]
+        nslopes = prices.loc[(prices['sector'] == sector) & (prices['slope'] > 0)]
 
-    # sort slope data by sector
-    for symbol in prices.columns:
-        slope = prices.at['slope', symbol]
-        sector = cd.at[symbol, 'Sector']
-        if type(sector) == numpy.ndarray: # some tickers return duplicate sectors
-            sector = sector[0] # this prevents an error
-
-        tSectors[sector] = tSectors.get(sector, 0) + 1
-        if slope > 0:
-            pSectors[sector] = pSectors.get(sector, 0) + 1
-            if not pSectorAvg.get(sector, None):
-                pSectorAvg[sector] = []
-            pSectorAvg[sector].append(slope)
-        
-        elif slope < 0:
-            nSectors[sector] = nSectors.get(sector, 0) + 1
-            if not nSectorAvg.get(sector, None):
-                nSectorAvg[sector] = []
-            nSectorAvg[sector].append(slope)
-
-    # remove failed/missing tickers that were sorted into nan dictionary   
-    if numpy.nan in tSectors:
-        del tSectors[numpy.nan]
-
-    # generate dataframe from slope counts and averages
-    df = pd.DataFrame(columns = ('Positive Slope', '+Average', 'Negative Slope', '-Average', 'Total', '% Positive') )    
-    for sector in sorted(tSectors.keys()):
-        pSlopes = int(pSectors.get(sector, 0))
-        if sector in pSectorAvg:
-            pSlopeAvg = pSectorAvg[sector]
-            pSlopeAvg = sum(pSlopeAvg) / len(pSlopeAvg)
-        else:
-            pSlopeAvg = 0
-
-        nSlopes = (nSectors.get(sector, 0))
-        if sector in nSectorAvg:
-            nSlopeAvg = nSectorAvg[sector]
-            nSlopeAvg = sum(nSlopeAvg) / len(nSlopeAvg)
-        else:
-            nSlopeAvg = 0
-
-        # add new row to dataframe
-        df.loc[sector] = {
-                'Positive Slope': pSlopes,
-                '+Average': pSlopeAvg,
-                'Negative Slope': nSlopes,
-                '-Average': nSlopeAvg,
-                'Total': tSectors[sector],
-                '% Positive': pSlopes/tSectors[sector]*100 }
-
-    # display dataframe
-    df.loc['Total']= df.sum()
-    total_pos = df.at['Total', 'Positive Slope']
-    total = df.at['Total', 'Total']
-    df.at['Total', '% Positive'] = total_pos / total * 100
-    for column in ('Positive Slope', 'Negative Slope', 'Total'):
-        df[column] = df[column].astype(int)
-    print(df)
-    return df
+        sectors.loc[sector] = {
+            'pslope': len(pslopes),
+            'pavg': pslopes.slope.mean(),
+            'nslope': len(nslopes),
+            'navg': nslopes.slope.mean(),
+            'count': count,
+            '%pslope': (len(pslopes) / count) * 100 }
+    total = sectors.sum()
+    sectors.loc['Average'] = sectors.mean()
+    sectors.loc['Total'] = total
+    print(sectors)
+    return sectors
 
 def detect_state(prices, volumes, sectors):
     pslope = sectors.at['Total', '% Positive']
@@ -214,72 +150,59 @@ def detect_state(prices, volumes, sectors):
         state = 'up'
     return state
 
-def save_xls(prices, volumes, sectors):
+def save_xls(long, prices, sectors):
     with pd.ExcelWriter('market.xlsx') as writer:  # doctest: +SKIP
+        prices.to_excel(writer, sheet_name='long')
         prices.to_excel(writer, sheet_name='prices')
         volumes.to_excel(writer, sheet_name='volumes')
         sectors.to_excel(writer, sheet_name='sectors')
 
-def Regress(dataframe, pivotpoint):
+def ProcessTickerData(dataframe):
     'Pivot dataframe and append regression info'
 
-    from numpy import float32
-    df = dataframe.pivot(
-        index = 'timepoint',
-        columns = 'ticker',
-        values = pivotpoint)
+    def regression(row):
+        # called by dataframe.apply to regress each row
 
-    timepoints = df.index.values
-    changes = {}
-    slopes = {}
-    rvalues = {}
-    pvalues = {}
-    stderrs = {}
+        try:
+            '''
+            there are 3 problems with the company data that must be accounted for
+            1: missing values will trigger a key error
+                the try ... except clause handles this issue
+            2: empty data or na can be returned,
+                I added "or 'Unknown Sector'" to label empty datums
+            3: some stocks return a strange list such as ['Technolgy', 'Technology']
+                so if sector is not a str I get the first entry from the list instead
+            '''            
+            sector = cd.at[row.name, 'Sector'] or 'Unknown Sector'
+            sector = sector if type(sector) == str else sector[0]
+        except:
+            sector = 'Unknown Sector'
+        r = stats.linregress(timepoints, y=row)
+        return pd.Series(oDict((
+            ('change', row.iloc[-1] - row.iloc[0]), # change from first to last timepoint
+            ('slope', r.slope),
+            ('rvalue', r.rvalue),
+            ('pvalue', r.pvalue),
+            ('stderr', r.stderr),
+            ('sector', sector) )))
 
-    for p in df:
-        results = stats.linregress(timepoints, df[p].astype(float32))
-        start = df.at[timepoints[0], p]
-        end = df.at[timepoints[-1], p]
+    prices = dataframe.pivot(
+        index = 'ticker',
+        columns = 'timepoint',
+        values = 'price')
+    volumes = dataframe.pivot(
+        index = 'ticker',
+        columns = 'timepoint',
+        values = 'volume')
 
-        changes[p] = end - start   
-        slopes[p] = results.slope
-        rvalues[p] = results.rvalue
-        pvalues[p] = results.pvalue
-        stderrs[p] = results.stderr
-    df.loc['change'] = changes
-    df.loc['slope'] = slopes
-    df.loc['rval'] = rvalues
-    df.loc['pval'] = pvalues
-    df.loc['sterr'] = stderrs
-    return df
-
-def ProcessTickerData(df):
-    'Perform time series analysis and display it'
-
-    start = time.time()
-    prices = Regress(df, 'price')
-    volume = Regress(df, 'volume')
-    paverages = prices.iloc[-4:].mean(axis=1)
-    vaverages = volume.iloc[-4:].mean(axis=1)
-
-    prices.sort_values('slope', axis=1, inplace=True)
-    print(f'Regression processed in: {(time.time() - start) * 1000:.0f}ms')
-
-    # display summary
-    print('\nPRICES')
-    print(prices)
-    print(f'\nStat Average for {prices.shape[1]} tickers')
-    print(paverages.to_string(header=False))
-
-    '''
-    print()
-    print('\nVOLUME')
-    print(volume)
-    print(f'Stat Average for {prices.shape[1]} tickers')
-    print(vaverages.to_string(header=False))
-    '''
-
-    return prices, volume
+    cd = company_data.GetData().set_index('Symbol') # used for sector look-up by ticker
+    timepoints = prices.columns.values # y values for regression
+    results = prices.apply(regression,axis=1) # apply price regression
+    results = results.join(volumes.mean(axis=1).rename('volume')) # add average volume column
+    results.sort_values('slope', axis=0, inplace=True)
+    results.loc['Average']= results.mean()
+    print(results)
+    return results, volumes
 
 def GetTime():
     return datetime.datetime.now().strftime("%H:%M:%S on %m/%d/%Y")
@@ -300,6 +223,7 @@ def main(load, save, interval, timepoints, index, excel):
     #stock_buy_list = get_stock_buy_list()
     #print(stock_buy_list)
 
+    running = False
     first_time = True
     while running or first_time:
         first_time = False
@@ -309,21 +233,20 @@ def main(load, save, interval, timepoints, index, excel):
         assert tickers, f'Index {index} not found: exiting'
 
         if load:
-            print('Loading saved data from dataframe.sav')
+            print('\nLoading saved data from dataframe.sav')
             df = pd.read_pickle('dataframe.sav')
             prices, volumes = ProcessTickerData(df)
         else:
             df = scan_index(tickers, timepoints, interval, save=save)
             prices, volumes = ProcessTickerData(df)
 
-        #get_sector_average_change(prices)
         sectors = get_sector_slopes(prices)
 
-        marketState = detect_state(prices, volumes, sectors)
-        print(f'\nCurrent market state: {marketState}')
-        handlers.launch(marketState, ib)
+        #marketState = detect_state(prices, volumes, sectors)
+        #print(f'\nCurrent market state: {marketState}')
+        #handlers.launch(marketState, ib)
 
-    if excel: save_xls(prices, volumes, sectors)
+    if excel: save_xls(df, prices, sectors)
 
 
  

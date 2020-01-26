@@ -12,6 +12,7 @@ from PyInquirer import prompt
 from aiohttp import ClientSession
 from scipy import stats
 from classes import *
+from collections import OrderedDict
 import ticks
 
 market_state = None

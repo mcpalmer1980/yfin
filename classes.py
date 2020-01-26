@@ -1,8 +1,6 @@
 from common import *
 from collections import OrderedDict as oDict
 
-print(time.time())
-
 exchange_source_dict = {
     'nasdaq': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=nasdaq&render=download',
     'amex': 'https://old.nasdaq.com/screening/companies-by-name.aspx?letter=0&exchange=amex&render=download',    
@@ -42,7 +40,7 @@ class time_it():
         self.time = []
         self.total = []
         if desc:
-            self.add(desc, True)
+            self.Add(desc, True)
 
     def Add(self, desc, blank=False):
         new = time.time()
@@ -71,6 +69,7 @@ class time_it():
                 st += str(desc) + '\n'
         self.__init__()
         return st
+
 
 class TickerData():
     """
@@ -243,6 +242,7 @@ class CompanyData():
         df.set_index('Symbol', inplace=True)
         self.company_names = df
         self.loaded = True
+        print('done')
 
     def retrieve_data_a(self):
         print('Downloading Company Data')
