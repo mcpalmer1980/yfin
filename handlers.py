@@ -1,53 +1,109 @@
+'stock trading algorithms for ibx project'
+
 import ibx
 from common import *
+import market
 
-def random_handler(own, percent):
-    if own:
-        if percent < -7:
-            print('heavy loss: liquidating')
-            market.ib.SellAll()
-        elif percent > 4:
-            print('profit goal attained: liquidating')
-            market.ib.SellAll()
-        else:
-            print('position okay: no action taken')
-    else:
-        print(term.blink('You own no stocks: buy 1 long, 1 short'))
-        time.sleep(6)
-        print(term.move_up + ('You own no stocks: buy 1 long, 1 short'))
+def random_handler(stocks, sectors):
+    'example random algo'
 
-def default_handler(own, percent):
-    print('No handler for current market state: using random')
-    random_handler(own, percent)
-
-state_handlers = {
-    'down': None,
-    'downtrend': None,
-    'random': random_handler,
-    'uptrend': None,
-    'up': None }
-
-def liquidate():
-    global running
-    print(term.red('simulated liquidation!'))
-    running = False
-
-def launch(state, ib):
-    own = False
-    percent = 0
-
-    if ib.connected:
-        portfolio = market.ib.GetStocksFrame()
-        if portfolio:
-            own = True
-            pnl = portfolio.iat[-1, -1]
-            cost = portfolio.iat[-1, -2]
-            percent = (pnl / cost) * 100
-            print(f'profit: {percent}')
+    # finish function is only called if the algo is chosen
+    def finish(portfolio, prev_state):
+        print('random algo selected')
+        for ticker, position in portfolio.iterrows():
+            if position.pnl < -7:
+                print(f'heavy loss: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            elif position.pnl > 4:
+                print(f'profit goal attained: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            else:
+                print(f'position okay: no action taken for {ticker}')
     
-    handler = state_handlers.get(state, None)
-    if handler:
-        handler(own, percent)
-    else:
-        # TODO - remove this
-        default_handler(own, percent)
+    score = 0
+    pslope = sectors.at['Total', '%pslope']
+    if pslope >= 45 and pslope <= 65:
+        score = 1
+    print(f'random score: {score}')
+    return score, finish
+
+def up_handler(stocks, sectors):
+    def finish(portfolio, prev_state):
+        print('up algo selected')
+        for ticker, position in portfolio.iterrows():
+            if position.pnl < -7:
+                print(f'heavy loss: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            elif position.pnl > 4:
+                print(f'profit goal attained: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            else:
+                print(f'position okay: no action taken for {ticker}')
+
+    score = 0
+    pslope = sectors.at['Total', '%pslope']
+    if pslope > 65:
+        score = 1
+    print(f'up score: {score}')
+    return score, finish
+
+def down_handler(stocks, sectors):
+    def finish(portfolio, prev_state):
+        print('down algo selected')
+        for ticker, position in portfolio.iterrows():
+            if position.pnl < -7:
+                print(f'heavy loss: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            elif position.pnl > 4:
+                print(f'profit goal attained: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            else:
+                print(f'position okay: no action taken for {ticker}')
+    
+    score = 0
+    pslope = sectors.at['Total', '%pslope']
+    if pslope < 65:
+        score = 1
+    print(f'down score: {score}')
+    return score, finish
+
+def stupid_handler(stocks, sectors):
+    def finish(portfolio, prev_state):
+        print('stupid algo selected')
+        for ticker, position in portfolio.iterrows():
+            if position.pnl < -7:
+                print(f'heavy loss: keeping {ticker} anyway')
+                #market.ib.Sell(ticker)
+            elif position.pnl > 4:
+                print(f'profit goal attained: liquidating {ticker}')
+                #market.ib.Sell(ticker)
+            else:
+                print(f'position okay: no action taken for {ticker}')
+    
+    score = 0.5
+    print(f'stupid score: {score}')
+    return score, finish
+
+
+algos = {
+    'random': random_handler,
+    'up': up_handler,
+    'down': down_handler,
+    'stupid': stupid_handler }
+
+def launch(stocks, sectors):
+    'score each algo and run the highest scored algo if score > 0'
+    results = []
+    print(f'\nPrevious market state: {launch.prev_state}')
+    for algo in algos:
+        # append a tuple for each algo: ( score, function )
+        results.append( algos[algo](stocks, sectors) + (algo,) )
+    
+    score, func, name = sorted(results, key=lambda x: x[0])[-1] # get the hightest scored tuple
+    if score > 0: # make sure score > 0
+        portfolio = ib.GetPortfolio(False) 
+        func(portfolio, launch.prev_state) # finish the algo by calling function
+        launch.prev_state = name
+launch.prev_state = None
+
+

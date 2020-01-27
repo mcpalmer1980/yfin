@@ -1,5 +1,6 @@
 #! /usr/bin/env python3
 from common import *
+import common
 import ticks
 import handlers
 import ibx
@@ -136,8 +137,8 @@ def get_sector_slopes(prices):
     print(sectors)
     return sectors
 
-def detect_state(prices, volumes, sectors):
-    pslope = sectors.at['Total', '% Positive']
+def detect_state(prices, sectors):
+    pslope = sectors.at['Total', '%pslope']
     if pslope < 15:
         state = 'down'
     elif pslope < 45:
@@ -202,7 +203,7 @@ def ProcessTickerData(dataframe):
     results.sort_values('slope', axis=0, inplace=True)
     results.loc['Average']= results.mean()
     print(results)
-    return results, volumes
+    return results
 
 def GetTime():
     return datetime.datetime.now().strftime("%H:%M:%S on %m/%d/%Y")
@@ -217,13 +218,12 @@ def GetTime():
 def main(load, save, interval, timepoints, index, excel):
     'Main status command'
 
-    global ib, marketState
-    ib = ibx.ibx(allow_error=True, mess='market.py')
     print('Market Status by Christopher M Palmieri')
+    ib.Connect(allow_error=True)
     #stock_buy_list = get_stock_buy_list()
     #print(stock_buy_list)
 
-    running = False
+    running = True
     first_time = True
     while running or first_time:
         first_time = False
@@ -235,18 +235,15 @@ def main(load, save, interval, timepoints, index, excel):
         if load:
             print('\nLoading saved data from dataframe.sav')
             df = pd.read_pickle('dataframe.sav')
-            prices, volumes = ProcessTickerData(df)
+            stocks = ProcessTickerData(df)
         else:
             df = scan_index(tickers, timepoints, interval, save=save)
-            prices, volumes = ProcessTickerData(df)
+            stocks = ProcessTickerData(df)
 
-        sectors = get_sector_slopes(prices)
+        sectors = get_sector_slopes(stocks)
+        handlers.launch(stocks, sectors)
 
-        #marketState = detect_state(prices, volumes, sectors)
-        #print(f'\nCurrent market state: {marketState}')
-        #handlers.launch(marketState, ib)
-
-    if excel: save_xls(df, prices, sectors)
+    if excel: save_xls(df, stocks, sectors)
 
 
  
