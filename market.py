@@ -27,7 +27,8 @@ async def get_price(ticker, session):
         price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
         pclose = data["chart"]["result"][0]["meta"]["previousClose"]
         volumes = data["chart"]["result"][0]["indicators"]["quote"][0]['volume']
-        volume = volumes[-1] or volumes[-2] or volumes[-3] or volumes[-4] # the last items are often empty?
+        volume = next((v for v in reversed(volumes) if v), 0) # get most recent non-empty item, def=0 to avoid exception
+        #volumes[-1] or volumes[-2] or volumes[-3] or volumes[-4] # the last items are often empty?
     except:
         price = not_found
         volume = 0
@@ -152,10 +153,10 @@ def detect_state(prices, sectors):
     return state
 
 def save_xls(long, prices, sectors):
+    print('saving data to market.xlsx')
     with pd.ExcelWriter('market.xlsx') as writer:  # doctest: +SKIP
-        prices.to_excel(writer, sheet_name='long')
+        long.to_excel(writer, sheet_name='long')
         prices.to_excel(writer, sheet_name='prices')
-        volumes.to_excel(writer, sheet_name='volumes')
         sectors.to_excel(writer, sheet_name='sectors')
 
 def ProcessTickerData(dataframe):
@@ -223,7 +224,7 @@ def main(load, save, interval, timepoints, index, excel):
     #stock_buy_list = get_stock_buy_list()
     #print(stock_buy_list)
 
-    running = True
+    running = False
     first_time = True
     while running or first_time:
         first_time = False
