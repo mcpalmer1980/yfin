@@ -6,16 +6,12 @@ import handlers
 import ibx
 
 running = True
-marketState = None
-
-
 
 def get_stock_buy_list():
     if os.getenv('stock_buy'):
         return os.getenv('stock_buy')
     else:
         return ticker_data.get_name(create=True)
-        
 
 async def get_price(ticker, session):
     'Get price, volume, and previous close for ticker'
@@ -28,7 +24,6 @@ async def get_price(ticker, session):
         pclose = data["chart"]["result"][0]["meta"]["previousClose"]
         volumes = data["chart"]["result"][0]["indicators"]["quote"][0]['volume']
         volume = next((v for v in reversed(volumes) if v), 0) # get most recent non-empty item, def=0 to avoid exception
-        #volumes[-1] or volumes[-2] or volumes[-3] or volumes[-4] # the last items are often empty?
     except:
         price = not_found
         volume = 0
@@ -138,20 +133,6 @@ def get_sector_slopes(prices):
     print(sectors)
     return sectors
 
-def detect_state(prices, sectors):
-    pslope = sectors.at['Total', '%pslope']
-    if pslope < 15:
-        state = 'down'
-    elif pslope < 45:
-        state = 'downtrend'
-    elif pslope < 65:
-        state = 'random'
-    elif pslope < 85:
-        state = 'uptrend'
-    else:
-        state = 'up'
-    return state
-
 def save_xls(long, prices, sectors):
     print('saving data to market.xlsx')
     with pd.ExcelWriter('market.xlsx') as writer:  # doctest: +SKIP
@@ -181,6 +162,7 @@ def ProcessTickerData(dataframe):
             sector = 'Unknown Sector'
         r = stats.linregress(timepoints, y=row)
         return pd.Series(oDict((
+            ('price', row.iloc[-1]),
             ('change', row.iloc[-1] - row.iloc[0]), # change from first to last timepoint
             ('slope', r.slope),
             ('rvalue', r.rvalue),
@@ -221,14 +203,14 @@ def main(load, save, interval, timepoints, index, excel):
 
     print('Market Status by Christopher M Palmieri')
     ib.Connect(allow_error=True)
-    #stock_buy_list = get_stock_buy_list()
-    #print(stock_buy_list)
+    #market_close = datetime.datetime.now().replace(hour=16, minute=0)
+    market_close = datetime.datetime.now().replace(hour=23, minute=59)
 
-    running = False
+    running = False if load else True
     first_time = True
-    while running or first_time:
+    while (running or first_time) and datetime.datetime.now() < market_close:
         first_time = False
-        get_market_status()
+        #get_market_status()
 
         tickers = ticker_data[index]
         assert tickers, f'Index {index} not found: exiting'
@@ -245,10 +227,6 @@ def main(load, save, interval, timepoints, index, excel):
         handlers.launch(stocks, sectors)
 
     if excel: save_xls(df, stocks, sectors)
-
-
- 
-
 
 if __name__ == '__main__':
     main()

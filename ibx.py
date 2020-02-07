@@ -1,8 +1,14 @@
-#from ib_insync import *
+'''
+IBX class API
+This class encapsulates and simplifies access to ib_sync functionality
+Stocks may be easily purchased and sold, and your portfolio is accessible
+'''
+
 from common import *
 import ib_insync as ibi
 
-
+buy_limit_multi = 1
+sell_limit_multi = 1
 '''
 phage7777
 tmux2KUP
@@ -10,10 +16,25 @@ tmux2KUP
 
 
 class ibx():
+    '''
+    This class encapsulates and simplifies access to ib_sync functionality
+    Stocks may be easily purchased and sold, and your portfolio is accessible
+    '''
     def __init__(self, port=7000, _id=100, allow_error=False, **params):
+        '''
+        Initiate class and connect to TWS if possible
+        Set port to None or False to prevent the class from automatically connecting
+        You can call Connect to connect later
+        '''
         print('ibx loaded from ' + params.get('mess', "nowhere"))
         self.ib = ibi.IB()
         self.connected = False
+        self.currency = params.get('currency', 'USD')
+        self.trades = []
+        if port:
+            self.Connect(port, _id, allow_error, **params)
+    
+    def Connect(self, port=7000, _id=100, allow_error=False, **params):
         try:
             self.ib.connect('127.0.0.1', port, _id)
             self.ib.reqMarketDataType(3)
@@ -30,10 +51,9 @@ class ibx():
                 import sys
                 sys.exit()
 
-        self.currency = params.get('currency', 'USD')
-        self.trades = []
+        return self.connected
 
-    def __del__(self):
+    def __exit__(self):
         if self.connected:
             print('disconnected from ib at {}'.format(self.ib.reqCurrentTime()))
             self.ib.disconnect()
@@ -41,24 +61,36 @@ class ibx():
     def __getitem__(self, ticker):
         return self.GetShares(ticker)
 
-    def Buy(self, ticker, amount, limit=None):
-        print('buying {} shares of {}'.format(amount, ticker))
+    def Buy(self, ticker, shares, limit=None):
+        '''
+        Buy x [shares] of stock [ticker]
+        The purchase will be immediately forwarded to the TWS API if possible
+        
+        EXPERIMENTAL: Prices automatically limited to 105% of the current cost
+        '''
+        if not self.connected:
+            print(f'Service not available: cannot buy {shares} shares of {ticker}')
+            return
+        #if not limit:
+        #    limit = self.GetPrice(ticker) * buy_limit_multi
+
+        print('buying {} shares of {}'.format(shares, ticker))
         contract = ibi.Stock(ticker, 'SMART', self.currency)
         self.ib.qualifyContracts(contract)
         if limit:
-            order = ibi.order.LimitOrder('BUY', amount, limit)
+            order = ibi.order.LimitOrder('BUY', shares, limit)
         else:
-            order = ibi.order.MarketOrder('BUY', amount)
+            order = ibi.order.MarketOrder('BUY', shares)
         trade = self.ib.placeOrder(contract, order)
         self.trades.append(trade)
         return trade
 
     def GetPrice(self, ticker):
         contract = self.ib.qualifyContracts(ibi.Stock(ticker, 'SMART', 'USD'))
-        r = self.ib.reqMktData(*contract)
+        r = self.ib.reqMktData(*contract, snapshot=True)
         for i in range(100):
             if r.last == r.last:
-                print('found price after {} tries'.format(i))
+                #print('found price after {} tries'.format(i))
                 price = r.last
                 break
             self.ib.sleep(.1)
@@ -80,58 +112,24 @@ class ibx():
             stocks[position.contract.symbol] = position.position
         return stocks
 
-    def GetStocksFrame(self):
-        stocks = []
-
-
-        for position in self.ib.positions():
-            ticker = position.contract.symbol
-            price = self.GetPrice(ticker)
-            stocks.append({
-                    'stock': ticker,
-                    'shares': position.position,
-                    'cost': position.avgCost,
-                    'current': price,
-                    'difference': price - position.avgCost,
-                    'value': price * position.position,
-                    'profit': (position.position * price) - (position.position * position.avgCost) })
+    def GetPortfolio(self, total=True):
+        if not self.connected:
+            return pd.DataFrame()
         df = pd.DataFrame(columns=[
-                'stock',
-                'shares',
-                'cost',
-                'current',
-                'difference' ,
-                'value',
-                'profit' ])
-        df = df.append(stocks)
-        totals = df.sum()
-        totals['stock'] = 'total'
-        df = df.append(totals, ignore_index=True)
-        return df
-
-    def GetStocksFrame(self):
-        stocks = []
+                'shares', 'cost', 'current','value','profit', 'pnl' ])
 
         for position in self.ib.portfolio():
             ticker = position.contract.symbol
-            stocks.append({
-                    'stock': ticker,
+            df.loc[ticker] = {
                     'shares': position.position,
                     'cost': position.averageCost,
                     'current': position.marketPrice,
                     'value': position.marketValue,
-                    'profit': position.unrealizedPNL })
-        df = pd.DataFrame(columns=[
-                'stock',
-                'shares',
-                'cost',
-                'current',
-                'value',
-                'profit' ])
-        df = df.append(stocks)
-        totals = df.sum()
-        totals['stock'] = 'total'
-        df = df.append(totals, ignore_index=True)
+                    'profit': position.unrealizedPNL,
+                    'pnl': (position.marketPrice - position.averageCost) / position.marketPrice * 100 }
+
+        if total:
+            df.loc['Total'] = df.sum()
         return df
 
 
@@ -147,19 +145,28 @@ class ibx():
         self.ib.qualifyContracts(*contracts)
         prices = self.ib.reqTickers(*contracts)
         elapsed = time.time() - start_time
+        for price in prices:
+            print(price)
+            print(price['ask'])
+            #print(f"{price.symbol}: {price.last}")
         print(prices)
         print(elapsed)
 
 
-    def Sell(self, ticker=None, amount=None):
-        amount = amount or self.GetShares(ticker)
-        if not amount:
+    def Sell(self, ticker=None, shares=None, limit=None):
+        #if not limit:
+        #    limit = self.GetPrice(ticker) * sell_limit_multi
+        shares = shares or self.GetShares(ticker)
+        if not shares:
             print('have no shares of {} to sell'.format(ticker))
             return None
-        print('selling {} shares of {}'.format(amount, ticker))
+        print('selling {} shares of {}'.format(shares, ticker))
         contract = ibi.Stock(ticker, 'SMART', self.currency)
         self.ib.qualifyContracts(contract)
-        order = ibi.order.MarketOrder('SELL', amount)
+        if limit:
+            order = ibi.order.LimitOrder('SELL', shares)
+        else:
+            order = ibi.order.MarketOrder('SELL', shares)
         trade = self.ib.placeOrder(contract, order)
         return trade
     def SellAll(self):
@@ -244,7 +251,7 @@ def stocks():
 
 @main.command()
 def start():
-    print(get_info('aapl', 'previous'))
+    ib.GetPrices()
 
 
 

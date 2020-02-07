@@ -14,6 +14,7 @@ from scipy import stats
 from classes import *
 from collections import OrderedDict
 import ticks
+import ibx
 
 market_state = None
 company_data = CompanyData()
@@ -38,4 +39,4 @@ exchange_source_dict = {
 
 not_found = 0
 base_url = "https://query1.finance.yahoo.com/v8/finance/chart/"
-
+ib = ibx.ibx(False, allow_error=True)

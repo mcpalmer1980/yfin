@@ -4,21 +4,38 @@ import ibx
 from common import *
 import market
 
+stock_buy_list = ['AAPL', ]
+stock_buy_value = 1000
+
+def buy_stock(stocks, sectors):
+    stock = stock_buy_list[0]
+    try:
+        price = stocks.loc[stock].price
+    except:
+        return
+    shares = (stock_buy_value // price) + 1
+    print(f'default handler buying {shares} shares of {stock}')
+    ib.Buy(stock, shares)
+
+
 def random_handler(stocks, sectors):
     'example random algo'
 
     # finish function is only called if the algo is chosen
     def finish(portfolio, prev_state):
         print('random algo selected')
-        for ticker, position in portfolio.iterrows():
-            if position.pnl < -7:
-                print(f'heavy loss: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            elif position.pnl > 4:
-                print(f'profit goal attained: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            else:
-                print(f'position okay: no action taken for {ticker}')
+        if portfolio.empty:
+            buy_stock(stocks, sectors)
+        else:
+            for ticker, position in portfolio.iterrows():
+                if position.pnl < -7:
+                    print(f'heavy loss: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                elif position.pnl > 4:
+                    print(f'profit goal attained: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                else:
+                    print(f'position okay: no action taken for {ticker}')
     
     score = 0
     pslope = sectors.at['Total', '%pslope']
@@ -30,15 +47,18 @@ def random_handler(stocks, sectors):
 def up_handler(stocks, sectors):
     def finish(portfolio, prev_state):
         print('up algo selected')
-        for ticker, position in portfolio.iterrows():
-            if position.pnl < -7:
-                print(f'heavy loss: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            elif position.pnl > 4:
-                print(f'profit goal attained: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            else:
-                print(f'position okay: no action taken for {ticker}')
+        if portfolio.empty:
+            buy_stock(stocks, sectors)
+        else:
+            for ticker, position in portfolio.iterrows():
+                if position.pnl < -7:
+                    print(f'heavy loss: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                elif position.pnl > 4:
+                    print(f'profit goal attained: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                else:
+                    print(f'position okay: no action taken for {ticker}')
 
     score = 0
     pslope = sectors.at['Total', '%pslope']
@@ -50,15 +70,18 @@ def up_handler(stocks, sectors):
 def down_handler(stocks, sectors):
     def finish(portfolio, prev_state):
         print('down algo selected')
-        for ticker, position in portfolio.iterrows():
-            if position.pnl < -7:
-                print(f'heavy loss: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            elif position.pnl > 4:
-                print(f'profit goal attained: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            else:
-                print(f'position okay: no action taken for {ticker}')
+        if portfolio.empty:
+            buy_stock(stocks, sectors)
+        else:
+            for ticker, position in portfolio.iterrows():
+                if position.pnl < -7:
+                    print(f'heavy loss: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                elif position.pnl > 4:
+                    print(f'profit goal attained: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                else:
+                    print(f'position okay: no action taken for {ticker}')
     
     score = 0
     pslope = sectors.at['Total', '%pslope']
@@ -70,15 +93,22 @@ def down_handler(stocks, sectors):
 def stupid_handler(stocks, sectors):
     def finish(portfolio, prev_state):
         print('stupid algo selected')
-        for ticker, position in portfolio.iterrows():
-            if position.pnl < -7:
-                print(f'heavy loss: keeping {ticker} anyway')
-                #market.ib.Sell(ticker)
-            elif position.pnl > 4:
-                print(f'profit goal attained: liquidating {ticker}')
-                #market.ib.Sell(ticker)
-            else:
-                print(f'position okay: no action taken for {ticker}')
+        if portfolio.empty:
+            ticker = stocks.index[-2] # select ticker with lowest slope!
+            price = stocks.loc[ticker].price
+            shares = (stock_buy_value // price) + 1
+            print(f'stupid handler buying {shares} shares of {ticker}')
+            market.ib.Buy(ticker, shares)
+        else:
+            for ticker, position in portfolio.iterrows():
+                if position.pnl < -7:
+                    print(f'heavy loss: keeping {ticker} anyway')
+                    market.ib.Sell(ticker)
+                elif position.pnl > 4:
+                    print(f'profit goal attained: liquidating {ticker}')
+                    market.ib.Sell(ticker)
+                else:
+                    print(f'position okay: no action taken for {ticker}')
     
     score = 0.5
     print(f'stupid score: {score}')
